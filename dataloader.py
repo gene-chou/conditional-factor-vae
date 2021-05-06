@@ -5,12 +5,12 @@ import torch
 import argparse
 import matplotlib.pyplot as plt
 from torchvision import transforms, utils
-from torch.utils.data import Dataset
+from torchvision.datasets import MNIST, CelebA
+from torch.utils.data import DataLoader, Dataset
 from collections import defaultdict
 import numpy as np 
-from skimage import io
-import skimage.transform
-
+from skimage import io, transform
+import random
 
 
 def mnist_check():
@@ -19,24 +19,12 @@ def mnist_check():
     opener.addheaders = [('User-agent', 'Chrome')]
     urllib.request.install_opener(opener)
 
-def idx2onehot(idx, n):
-
-    assert torch.max(idx).item() < n
-
-    if idx.dim() == 1:
-        idx = idx.unsqueeze(1)
-    onehot = torch.zeros(idx.size(0), n).to(idx.device)
-    onehot.scatter_(1, idx, 1)
-    
-    return onehot
-    
-
 def image_selection():
     output_path = "data/celeba/img_align_celeba/selected" #"Users⁩/gchou⁩/⁨Downloads⁩/⁨archive⁩/⁨img_align_celeba⁩/selected"
-    image_path = "data/celeba/img_align_celeba/img_align_celeba"
+    image_path = "data/celeba/img_align_celeba/original"
     celeba_attr_file = "data/celeba/list_attr_celeba_original.txt"
-    attr_types = [5, 6, 9, 10, 11, 16, 21, 23, 32, 36] 
-    # bald, bangs, black hair, blond hair, blurry, eyeglasses, male, mustache, smiling, wearing hat 
+    attr_types = [10, 16, 22, 23, 32, 33, 35, 36, 38, 39] 
+    # blond hair, eyeglasses, mouth slightly open, mustache, smiling, straight hair, earrings, hat, necklace, necktie
     #attr_type=16
 
     count = 0
@@ -64,8 +52,8 @@ def image_selection():
 
 
 def attr_annotation_selection():
-    attr_types = [5, 6, 9, 10, 11, 16, 21, 23, 32, 36] 
-    # bald, bangs, black hair, blond hair, blurry, eyeglasses, male, mustache, smiling, wearing hat 
+    attr_types = [10, 16, 22, 23, 32, 33, 35, 36, 38, 39] 
+    # blond hair, eyeglasses, mouth slightly open, mustache, smiling, straight hair, earrings, hat, necklace, necktie
 
     original_attr_file = "data/celeba/list_attr_celeba_original.txt"
     new_attr_file = open("data/celeba/list_attr_celeba.txt","w")
@@ -93,9 +81,8 @@ def attr_annotation_selection():
         idx += 1
 
     new_attr_file.close()
-    print("{} lines were copied".format(count))
 
-def get_celeba_selected_dataset(attr_file="data/celeba/list_attr_celeba.txt", im_dir="data/celeba/img_align_celeba/img_align_celeba", im_size=(224,192,3)):
+def get_celeba_selected_dataset(attr_file="data/celeba/list_attr_celeba.txt", im_dir="data/celeba/selected"):
 
     def display_samples():
         def show_annotations(image, annotations):
@@ -143,31 +130,43 @@ def get_celeba_selected_dataset(attr_file="data/celeba/list_attr_celeba.txt", im
 
             img_name = os.path.join(self.im_dir, self.attr_info[idx].split()[0])
             image = io.imread(img_name)
-
-            if im_size:
-                image = skimage.transform.resize(image, (224,192))
-                #automatically normalizes
-
-            else:
-                image = image/255.0 
-
             annotations = self.attr_info[idx].split()[1:] #list of strings ['0','1',...]
             annotations = np.array([int(i) for i in annotations])
+            #annotations = annotations.astype('float')#.reshape(-1, 1)
 
             # swap color axis because
             # numpy image: H x W x C
             # torch image: C X H X W
 
-            image = torch.from_numpy(image).float()
+            image = torch.from_numpy(image)
             image = torch.transpose(image,0,2)
             image = torch.transpose(image,1,2)
             # the three lines above should be equivalent to first transposing the nparray: image = image.transpose((2, 0, 1))
             # then converting to torch and then dividing by 255.0
+
+            image = image/255.0
+
+            # second image 
+            idx2 = random.randint(0, len(self.attr_info)-1)
+            try:
+                img_name2 = os.path.join(self.im_dir, self.attr_info[idx2].split()[0])
+            except: 
+                print("idx2: ",idx2)
+                idx2 = random.randint(0, len(self.attr_info)-1)
+                img_name2 = os.path.join(self.im_dir, self.attr_info[idx2].split()[0])
+
+            image2 = io.imread(img_name2)
+            image2 = torch.from_numpy(image2)
+            image2 = torch.transpose(image2,0,2)
+            image2 = torch.transpose(image2,1,2)
+            image2 = image2/255.0
+            annotations2 = self.attr_info[idx2].split()[1:] #list of strings ['0','1',...]
+            annotations2 = np.array([int(i) for i in annotations2])
    
-            return image, torch.from_numpy(annotations).float()
+            return image, torch.from_numpy(annotations).float(), image2, torch.from_numpy(annotations2).float()
 
 
-    celeba_selected_dataset = SelectedCelebaDataset(attr_file, im_dir)
+    celeba_selected_dataset = SelectedCelebaDataset(attr_file, im_dir)#, transform=transforms.Compose([transforms.Normalize(mean=[0.5,0.5,0.5],std=[0.5,0.5,0.5])]))
 
     return celeba_selected_dataset
 

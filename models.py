@@ -9,7 +9,7 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         self.latent_size = latent_size
         self.net = nn.Sequential(
-            nn.Linear(latent_size+num_labels, 1000),
+            nn.Linear(latent_size, 1000),
             nn.LeakyReLU(0.2),
             nn.Linear(1000, 1000),
             nn.LeakyReLU(0.2),
@@ -104,6 +104,7 @@ class FactorVAE(nn.Module):
         elif mode == 'normal':
             initializer = normal_init
 
+        #print(self._modules)
         for block in self._modules:
             for m in self._modules[block]:
                 initializer(m)
@@ -124,14 +125,8 @@ class FactorVAE(nn.Module):
         if no_decode:
             return z_cat.squeeze()
         else:
-            
-            #give labels before decoding
-            #add on the axis of channels
-             
-
-            #print("\nz: {}".format(z.shape))
-
             #revert the pooling
+            #print("z cat shape: {}".format(z_cat.shape))
             z_up = nn.functional.interpolate(z_cat, (11,9))
 
             recon_x = self.decode(z_up)
@@ -139,8 +134,11 @@ class FactorVAE(nn.Module):
 
     def inference(self, z, c):
         z = torch.cat((z,c),dim=-1) 
+        #print("z1 shape: {}",z.shape)
         z = z.reshape(-1,self.num_labels+self.latent_size,1,1)
+        #print("z2 shape: {}",z.shape)
         z = nn.functional.interpolate(z, (11,9))
+        #print("z3 shape: {}",z.shape)
         recon_x = self.decode(z)
         return recon_x
 
@@ -153,7 +151,7 @@ class FactorVAE(nn.Module):
 class VAE(nn.Module):
 
     def __init__(self, encoder_layer_sizes, latent_size, decoder_layer_sizes, im_dim_mul,
-                 conditional=False, onehot=True, num_labels=10):
+                 conditional=True, onehot=False, num_labels=10):
 
         super().__init__()
 
@@ -172,14 +170,20 @@ class VAE(nn.Module):
         self.decoder = Decoder(
             decoder_layer_sizes, latent_size, conditional, onehot, num_labels)
 
-    def forward(self, x, c=None):
+    def forward(self, x, c, no_dec=False):
 
         if x.dim() > 2:
             x = x.view(-1, self.im_dim_mul)
 
         means, log_var = self.encoder(x, c)
         z = self.reparameterize(means, log_var)
+
+        if no_dec:
+            return z
+        #z1 = torch.cat((z, c), dim=-1)
         recon_x = self.decoder(z, c)
+
+        #print("z1 shape: ", z1.shape)
 
         return recon_x, means, log_var, z
 
@@ -227,8 +231,6 @@ class Encoder(nn.Module):
     def forward(self, x, c=None):
 
         if self.conditional:
-            if self.onehot:
-                c = idx2onehot(c, n=self.num_labels)
             x = torch.cat((x, c), dim=-1)
             # x shape becomes [64,794] from [64,784] (28x28 im -> 1x784 vector)
 
@@ -272,10 +274,8 @@ class Decoder(nn.Module):
     def forward(self, z, c):
 
         if self.conditional:
-            if self.onehot:
-                c = idx2onehot(c, n=self.num_labels)
             z = torch.cat((z, c), dim=-1)
 
-        x = self.MLP(z)
+        recon_x = self.MLP(z)
 
-        return x
+        return recon_x
